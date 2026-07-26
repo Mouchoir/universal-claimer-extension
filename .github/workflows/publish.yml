@@ -1,0 +1,67 @@
+name: Publish
+
+# Store releases happen ONLY here, from a tagged commit of this repository — never from a
+# manually uploaded zip. That is what makes "the published binary is this source" verifiable:
+# the tag, this workflow and its run log are all public.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: store-release # gate releases behind an approval/secret scope
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # The manifest is never rewritten by CI: the tag must match what is committed, so the
+      # artifact is assembled from unmodified source.
+      - name: Verify manifest version matches the tag
+        run: node scripts/check-version.mjs "${{ github.event.inputs.tag || github.ref_name }}"
+
+      - name: Tests must pass before anything is published
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish to Chrome Web Store
+        env:
+          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: npx chrome-webstore-upload-cli upload --source dist/*.zip --auto-publish
+
+      # AMO reviews the source itself; the add-on is plain, unminified JS so no separate source
+      # upload is needed.
+      - name: Publish to Firefox Add-ons (AMO)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npx web-ext sign --source-dir=src --channel=listed --artifacts-dir=dist-signed
+
+      - name: Attach the built package to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist-signed/*.xpi

@@ -1,0 +1,19 @@
+{
+  "name": "universal-claimer-session-exporter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Export your logged-in session cookies locally, to connect an account in your self-hosted Universal Claimer.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "web-ext lint --source-dir=src",
+    "build": "web-ext build --source-dir=src --artifacts-dir=dist --overwrite-dest",
+    "check-version": "node scripts/check-version.mjs"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.4",
+    "web-ext": "^8.3.0",
+    "chrome-webstore-upload-cli": "^3.3.0"
+  }
+}
