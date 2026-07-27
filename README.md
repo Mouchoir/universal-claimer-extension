@@ -31,6 +31,16 @@ are all public, so anyone can check which commit produced a given store version.
 
 Firefox's AMO additionally reviews the source itself.
 
+## Site access (Firefox in particular)
+
+Chrome grants the manifest's host permissions when the extension is installed. **Firefox does
+not**: under Manifest V3 they are opt-in, and hosts added by an update stay ungranted — which
+looks exactly like being signed out, because the extension simply sees no cookies.
+
+So the popup asks for the selected service's sites the first time you export from it. Accept the
+prompt and the export proceeds; decline and it says so plainly rather than blaming your login.
+You can review or revoke this at any time in `about:addons` → the extension → **Permissions**.
+
 ## Install
 
 ### From the stores
