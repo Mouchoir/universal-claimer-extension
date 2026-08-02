@@ -51,27 +51,88 @@ so they can connect that account in their self-hosted Universal Claimer instance
 
 ---
 
-## Permission justifications (Chrome asks per permission)
+## Privacy practices tab — verbatim field answers
 
-**cookies** — The extension's only function is exporting the user's own session cookies for a
-service they are already signed in to. Without this permission it has nothing to do.
+Each of these fields caps at 1000 characters. Paste as-is.
 
-**activeTab** — Used solely to read the current tab's domain, so the popup preselects the service
-the user is signed in to. No page content is accessed.
+### Single purpose description
 
-**clipboardWrite** — Copying the exported cookies to the clipboard is the primary way the data is
-handed back to the user; the alternative is a file download.
+Universal Claimer is a self-hosted tool that claims free games and rewards on a user's own
+accounts. Some services refuse the automated browser it controls, so an account is connected by
+importing a session the user exported themselves.
 
-**Host permissions** (Twitch, Epic Games, Microsoft/Live/Bing, Amazon regional domains) — Scopes
-cookie reads to exactly the services Universal Claimer supports. The list is deliberately explicit
-rather than a wildcard, so the browser can enforce the boundary. Amazon appears many times because
-its account cookies are per-marketplace and users are spread across regional storefronts.
+This extension does exactly that one thing. While you are signed in to a supported service, it
+reads that service's cookies and hands them back to you — to your clipboard, or as a downloaded
+cookies.txt file. You then paste them into your own Universal Claimer instance.
 
-**Remote code** — None. All code ships in the package; nothing is fetched or evaluated at runtime.
+It has no other function. It makes no network requests, stores nothing between sessions, injects
+no content scripts, and modifies no page.
 
-**Data usage disclosures** — Declare *no* data collected, in every category. The extension
-transmits nothing. It handles cookies locally and hands them to the user, which is not collection:
-no copy reaches the developer or any third party.
+### cookies
+
+Reading cookies is the extension's entire function: it exports the user's own session for a
+service they are already signed in to, so they can connect that account in their self-hosted
+Universal Claimer instance. Without this permission the extension has nothing to do.
+
+Cookies are read only when the user opens the popup and clicks Copy or Download, and they go only
+to that user's own clipboard or downloads folder. They are never transmitted anywhere: the
+extension contains no code that opens a network connection, so there is no endpoint for them to
+reach.
+
+Which cookies can be read is bounded by the explicit host_permissions list, so only the four
+supported services' domains are ever accessible.
+
+### activeTab
+
+Used only to read the current tab's URL, so the popup can preselect the service the user is
+already signed in to instead of making them find it in a list.
+
+Nothing else about the tab is used: no page content is read, no script is injected, and nothing
+is modified. The extension remains fully functional without it — the user simply picks the
+service from the dropdown manually.
+
+### clipboardWrite
+
+Copying the exported cookies.txt to the clipboard is the primary way the data is handed back to
+the user, because the next step is pasting it into their own Universal Claimer instance. A file
+download is offered as the alternative.
+
+Nothing is ever read from the clipboard. It is only written, and only in direct response to the
+user clicking "Copy cookies.txt".
+
+### Host permission
+
+Cookie reads have to be scoped to the services Universal Claimer supports: Twitch, Epic Games,
+Microsoft (microsoft.com, live.com, bing.com) and Amazon.
+
+The list is deliberately explicit rather than a wildcard, so the browser itself enforces the
+boundary — the extension cannot read cookies for any site outside it, regardless of what its own
+code does.
+
+Amazon accounts for most of the entries because Amazon sessions are per-marketplace: a user in
+France signs in on amazon.fr, in Japan on amazon.co.jp, and so on. Each regional storefront needs
+its own entry for the extension to work outside the United States.
+
+No content script is injected into any of these hosts. The permission is used solely to read
+cookies through the cookies API.
+
+### Remote code
+
+Select **No, I am not using remote code**. All JavaScript ships inside the package; nothing is
+fetched, imported from a remote URL, or evaluated at runtime, and there is no eval() anywhere.
+
+### Data usage
+
+Tick **nothing**. Chrome defines collection as transmitting data off the user's device where the
+developer or a third party can access it, and this extension transmits nothing — the clipboard
+and the downloads folder are the user's own machine.
+
+Declaring "authentication information" here would be the cautious-looking answer and the wrong
+one: it publishes a notice telling users their data is collected, which is untrue and contradicts
+the privacy policy a reviewer will read on the same submission.
+
+Then tick all three certification checkboxes: no selling or transferring to third parties, no use
+unrelated to the core function, no use for creditworthiness or lending.
 
 ---
 
