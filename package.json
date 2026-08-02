@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "lint": "web-ext lint --source-dir=src",
+    "lint": "node scripts/check-manifest.mjs && web-ext lint --source-dir=src",
     "build": "web-ext build --source-dir=src --artifacts-dir=dist --overwrite-dest",
     "check-version": "node scripts/check-version.mjs"
   },

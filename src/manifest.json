@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Universal Claimer — Session Exporter",
   "version": "0.1.0",
-  "description": "Export your logged-in session cookies locally to connect an account in your self-hosted Universal Claimer. Never sends your data anywhere.",
+  "description": "Export your session cookies locally to connect an account in your self-hosted Universal Claimer. Nothing leaves your machine.",
   "permissions": ["cookies", "activeTab", "clipboardWrite"],
   "host_permissions": [
     "https://*.twitch.tv/*",
