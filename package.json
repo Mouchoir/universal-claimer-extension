@@ -1,6 +1,6 @@
 {
   "name": "universal-claimer-session-exporter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Export your logged-in session cookies locally, to connect an account in your self-hosted Universal Claimer.",
   "license": "MIT",

@@ -1,4 +1,5 @@
 import { SERVICES, serviceForUrl, toNetscape, dedupeCookies } from "./cookies.js";
+import { parsePairTarget } from "./pairing.js";
 
 // Cross-browser namespace: Firefox exposes `browser` (promises), Chrome exposes `chrome`
 // (promises in MV3). Both work with await.
@@ -32,10 +33,64 @@ let activeHost = null;
     }
     const id = tab?.url ? serviceForUrl(tab.url) : null;
     if (id) $service.value = id;
+    offerPairing(tab?.url ?? "");
   } catch {
     /* ignore */
   }
 })();
+
+/**
+ * When the active tab is a connect page carrying a pairing token, offer to send the session
+ * directly instead of making the operator copy and paste it.
+ *
+ * The tab URL is the entire channel: `activeTab` hands it over on click with no host permission,
+ * which is what makes this work against a self-hosted instance whose address cannot be known when
+ * the extension is built.
+ */
+function offerPairing(tabUrl) {
+  const target = parsePairTarget(tabUrl);
+  if (!target) return;
+  const svc = SERVICES.find((s) => s.id === target.serviceId);
+  if (!svc) return; // A connect page for a service this version does not know about.
+
+  document.getElementById("pair-service").textContent = svc.label;
+  document.getElementById("pair-host").textContent = new URL(target.origin).host;
+  document.getElementById("pair").hidden = false;
+
+  document.getElementById("pair-send").addEventListener("click", async () => {
+    try {
+      setStatus(`Reading your ${svc.label} cookies…`);
+      const { text, count, denied, hosts } = await collect(svc.id);
+      if (denied) {
+        setStatus(`Access to ${svc.label} sites was declined, so cookies can't be read.`, "err");
+        return;
+      }
+      if (count === 0) {
+        setStatus(`No cookies found for ${svc.label}. Are you signed in on that site?`, "err");
+        return;
+      }
+
+      // The instance answers CORS for this endpoint, so no host permission is needed for it
+      // either. The pairing token is what authorises the write, not the origin.
+      const res = await fetch(`${target.origin}/api/connect/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: target.token, cookiesText: text }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setStatus(data?.error?.message ?? `The instance rejected it (${res.status}).`, "err");
+        return;
+      }
+      setStatus(`Sent ${count} cookies for ${svc.label} (${hosts.join(", ")}).`, "ok");
+      document.getElementById("pair-send").disabled = true;
+    } catch (e) {
+      // Usually the instance being unreachable from this machine — worth saying so rather than
+      // showing a bare TypeError from fetch.
+      setStatus(`Could not reach ${new URL(target.origin).host}: ${String(e)}`, "err");
+    }
+  });
+}
 
 /**
  * Firefox (Manifest V3) does not grant manifest host permissions at install — the user opts in,
@@ -62,8 +117,8 @@ async function ensureAccess(svc, activeHost) {
   }
 }
 
-async function collect() {
-  const svc = SERVICES.find((s) => s.id === $service.value);
+async function collect(serviceId = $service.value) {
+  const svc = SERVICES.find((s) => s.id === serviceId);
   if (!svc) return { text: "", count: 0, label: "" };
   if (!(await ensureAccess(svc, activeHost))) {
     return { text: "", count: 0, label: svc.label, denied: true };

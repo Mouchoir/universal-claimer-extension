@@ -43,7 +43,11 @@ jobs:
       - name: Build package
         run: npm run build
 
+      # Skipped rather than failed when the Chrome credentials are absent. The two stores are
+      # approved independently — one can be live while the other is still in review, or never set
+      # up at all in a fork — and a missing Chrome secret should not block a Firefox release.
       - name: Publish to Chrome Web Store
+        if: ${{ secrets.CHROME_EXTENSION_ID != '' }}
         env:
           EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
@@ -54,6 +58,7 @@ jobs:
       # AMO reviews the source itself; the add-on is plain, unminified JS so no separate source
       # upload is needed.
       - name: Publish to Firefox Add-ons (AMO)
+        if: ${{ secrets.AMO_JWT_ISSUER != '' }}
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}

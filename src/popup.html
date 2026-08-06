@@ -14,6 +14,8 @@
       button.primary { background: #7c5cff; color: #fff; border-color: #7c5cff; }
       .muted { opacity: 0.7; font-size: 12px; }
       .status { margin-top: 10px; min-height: 16px; font-size: 13px; }
+      .pair-lead { margin: 0 0 8px; }
+      #pair hr { border: 0; border-top: 1px solid currentColor; opacity: 0.2; margin: 14px 0 10px; }
       .ok { color: #22c55e; }
       .err { color: #ef4444; }
     </style>
@@ -21,6 +23,19 @@
   <body>
     <h1>🎁 Universal Claimer — Session Exporter</h1>
     <p class="muted">Runs entirely on your machine. Your cookies are never sent anywhere.</p>
+
+    <!-- Shown only when the active tab is a connect page carrying a pairing token, which is the
+         one-click path. Hidden the rest of the time so the popup stays what it was. -->
+    <div id="pair" hidden>
+      <p class="pair-lead">
+        Send your <strong id="pair-service"></strong> session straight to
+        <strong id="pair-host"></strong>?
+      </p>
+      <button id="pair-send" class="primary">Send to this instance</button>
+      <p class="muted">Nothing is stored or sent anywhere else.</p>
+      <hr />
+      <p class="muted">Or export it by hand:</p>
+    </div>
 
     <label for="service">Service</label>
     <select id="service"></select>
