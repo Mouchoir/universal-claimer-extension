@@ -1,6 +1,6 @@
 import { SERVICES, serviceForUrl, toNetscape, dedupeCookies } from "./cookies.js";
 import { parsePairTarget } from "./pairing.js";
-import { readSession, sendSession } from "./session.js";
+import { readSession, sendSession, sendSessionViaTab } from "./session.js";
 
 // Cross-browser namespace: Firefox exposes `browser` (promises), Chrome exposes `chrome`
 // (promises in MV3). Both work with await.
@@ -23,6 +23,8 @@ for (const svc of SERVICES) {
 
 // Preselect the service matching the active tab, when recognizable.
 let activeHost = null;
+// Kept so the send can run inside the instance's own tab — see sendSessionViaTab.
+let activeTabId = null;
 
 (async () => {
   try {
@@ -34,6 +36,7 @@ let activeHost = null;
     }
     const id = tab?.url ? serviceForUrl(tab.url) : null;
     if (id) $service.value = id;
+    activeTabId = tab?.id ?? null;
     offerPairing(tab?.url ?? "");
   } catch {
     /* ignore */
@@ -88,9 +91,14 @@ function offerPairing(tabUrl) {
         return;
       }
 
-      // The instance answers CORS for this endpoint, so the send works whether or not the origin
-      // grant above was accepted. The pairing token is what authorises the write, not the origin.
-      const error = await sendSession(target.origin, target.token, text);
+      // Post from inside the instance's tab when we can. An extension page is a secure context,
+      // so fetching a plain-http instance from here is blocked as mixed content — which is what a
+      // bare "NetworkError" turns out to mean. Falling back to a direct fetch still covers https
+      // instances and browsers without scripting.
+      const viaTab = await sendSessionViaTab(api, activeTabId, target.origin, target.token, text);
+      const error = viaTab.unavailable
+        ? await sendSession(target.origin, target.token, text)
+        : viaTab.error;
       if (error) {
         setStatus(error, "err");
         return;

@@ -67,6 +67,45 @@ export async function readSession(api, serviceId) {
   return { text: toNetscape(unique), count: unique.length, label: svc.label, hosts };
 }
 
+/**
+ * POST a session from inside the instance's own tab.
+ *
+ * Preferred over {@link sendSession} because an extension page is a secure context: fetching a
+ * plain-http instance from one is blocked as mixed content, and the browser reports it as a bare
+ * NetworkError that gives no hint the protocol was the problem. Running in the tab makes the
+ * request same-origin, which sidesteps both that and CORS.
+ *
+ * Requires host permission for the tab's origin, so it returns a marker when it cannot run and
+ * the caller can fall back.
+ */
+export async function sendSessionViaTab(api, tabId, origin, token, cookiesText) {
+  if (!api.scripting?.executeScript || typeof tabId !== "number") return { unavailable: true };
+  try {
+    const [injected] = await api.scripting.executeScript({
+      target: { tabId },
+      args: [origin, token, cookiesText],
+      func: async (o, t, text) => {
+        try {
+          const res = await fetch(`${o}/api/connect/session`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token: t, cookiesText: text }),
+          });
+          if (res.ok) return null;
+          const body = await res.json().catch(() => null);
+          return body?.error?.message ?? `The instance rejected it (${res.status}).`;
+        } catch (e) {
+          return String(e);
+        }
+      },
+    });
+    return { error: injected?.result ?? null };
+  } catch {
+    // No permission for this origin, or a browser without scripting. The caller falls back.
+    return { unavailable: true };
+  }
+}
+
 /** POST a session to an instance's pairing endpoint. Returns an error string, or null on success. */
 export async function sendSession(origin, token, cookiesText) {
   let res;

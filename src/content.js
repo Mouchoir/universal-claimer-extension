@@ -34,12 +34,46 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type !== CONNECT) return;
-  // The token and service are relayed as-is; the worker re-derives both from this tab's URL and
-  // refuses if they disagree, so a page cannot ask for a session it was not issued a pairing for.
-  api.runtime
-    .sendMessage({ type: "uc-connect", token: data.token, serviceId: data.serviceId })
-    .then(
-      (result) => window.postMessage({ type: RESULT, ...result }, window.origin),
-      (e) => window.postMessage({ type: RESULT, ok: false, error: String(e) }, window.origin),
-    );
+  void connect(data);
 });
+
+/**
+ * Ask the worker for the session, then post it to this instance from here.
+ *
+ * The posting has to happen in this script rather than in the worker. An extension page is a
+ * secure context, and a self-hosted instance is usually plain http, so a fetch from there is
+ * blocked as mixed content — surfacing as a bare NetworkError that says nothing about the
+ * protocol being the cause. This script runs in the page's own origin, so http to http is
+ * same-origin: no mixed content, and no CORS.
+ */
+async function connect(data) {
+  const reply = (result) => window.postMessage({ type: RESULT, ...result }, window.origin);
+  try {
+    // The token and service are relayed as-is; the worker re-derives both from this tab's URL and
+    // refuses if they disagree, so a page cannot ask for a session it was not issued a pairing
+    // for.
+    const result = await api.runtime.sendMessage({
+      type: "uc-connect",
+      token: data.token,
+      serviceId: data.serviceId,
+    });
+    if (!result?.ok) {
+      reply(result ?? { ok: false, error: "The extension did not answer." });
+      return;
+    }
+
+    const res = await fetch(`${window.origin}/api/connect/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: data.token, cookiesText: result.cookiesText }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      reply({ ok: false, error: body?.error?.message ?? `The instance rejected it (${res.status}).` });
+      return;
+    }
+    reply({ ok: true, count: result.count, hosts: result.hosts });
+  } catch (e) {
+    reply({ ok: false, error: String(e) });
+  }
+}

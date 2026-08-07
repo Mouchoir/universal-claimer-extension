@@ -101,8 +101,13 @@ async function handleConnect(message, sender) {
     return { ok: false, error: `No ${svc.label} cookies found. Are you signed in on that site?` };
   }
 
-  const error = await sendSession(target.origin, target.token, text);
-  return error ? { ok: false, error } : { ok: true, count, hosts };
+  // The cookies go back to the content script, which posts them from the page's own origin.
+  //
+  // Not from here, because an extension page is a secure context and most self-hosted instances
+  // are plain http — the browser blocks that as mixed content, with a bare NetworkError and no
+  // hint that the protocol was the problem. The content script has the page's origin, so http to
+  // http is same-origin: no mixed content, and no CORS either.
+  return { ok: true, cookiesText: text, count, hosts };
 }
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
