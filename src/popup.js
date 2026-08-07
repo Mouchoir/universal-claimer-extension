@@ -81,6 +81,17 @@ function offerPairing(tabUrl) {
         /* older engine, or declined; what follows reports the real consequence */
       }
 
+      // Put the bridge on this page now rather than waiting for the operator to reload it. The
+      // background registers it for granted origins, but that only takes effect on the next
+      // navigation — and the page they are looking at is the one they want it on.
+      try {
+        if (activeTabId != null) {
+          await api.scripting.executeScript({ target: { tabId: activeTabId }, files: ["content.js"] });
+        }
+      } catch {
+        /* not granted, or no scripting; the send below is unaffected */
+      }
+
       setStatus(`Reading your ${svc.label} cookies…`);
       const { text, count, hosts } = await readSession(api, svc.id);
       if (count === 0) {

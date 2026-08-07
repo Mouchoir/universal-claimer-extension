@@ -44,20 +44,27 @@ async function syncBridges() {
     const existing = await api.scripting.getRegisteredContentScripts();
     const ours = existing.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX)).map((s) => s.id);
     if (ours.length) await api.scripting.unregisterContentScripts({ ids: ours });
+    if (!origins.length) return;
 
-    if (origins.length) {
-      await api.scripting.registerContentScripts([
-        {
-          id: `${SCRIPT_ID_PREFIX}page`,
-          js: ["content.js"],
-          matches: origins,
-          runAt: "document_idle",
-          persistAcrossSessions: true,
-        },
-      ]);
+    const script = {
+      id: `${SCRIPT_ID_PREFIX}page`,
+      js: ["content.js"],
+      matches: origins,
+      runAt: "document_idle",
+    };
+    try {
+      await api.scripting.registerContentScripts([{ ...script, persistAcrossSessions: true }]);
+    } catch {
+      // A temporarily installed extension cannot persist registrations — Firefox rejects the
+      // call outright. Retrying without it is what makes about:debugging installs work at all,
+      // and silently giving up here is what made the bridge never appear.
+      await api.scripting.registerContentScripts([script]);
     }
-  } catch {
-    // A browser without dynamic registration keeps the popup path, which still works.
+    console.info("[universal-claimer] page bridge registered for", origins);
+  } catch (e) {
+    // Worth saying out loud: without this the site's one-click button silently stays a
+    // three-step explanation, with nothing anywhere to say why.
+    console.warn("[universal-claimer] could not register the page bridge:", e);
   }
 }
 
