@@ -13,6 +13,9 @@ const api = globalThis.browser ?? globalThis.chrome;
 const READY = "uc-extension-ready";
 const CONNECT = "uc-extension-connect";
 const RESULT = "uc-extension-result";
+// Reading cookies and posting them take a couple of seconds each, and a button that sits there
+// saying nothing reads as a button that did nothing.
+const PROGRESS = "uc-extension-progress";
 
 function announce() {
   window.postMessage({ type: READY, version: api.runtime.getManifest().version }, window.origin);
@@ -48,7 +51,9 @@ window.addEventListener("message", (event) => {
  */
 async function connect(data) {
   const reply = (result) => window.postMessage({ type: RESULT, ...result }, window.origin);
+  const progress = (phase) => window.postMessage({ type: PROGRESS, phase }, window.origin);
   try {
+    progress("reading");
     // The token and service are relayed as-is; the worker re-derives both from this tab's URL and
     // refuses if they disagree, so a page cannot ask for a session it was not issued a pairing
     // for.
@@ -62,6 +67,7 @@ async function connect(data) {
       return;
     }
 
+    progress("sending");
     const res = await fetch(`${window.origin}/api/connect/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -86,13 +86,28 @@ async function handleConnect(message, sender) {
   const svc = SERVICES.find((s) => s.id === target.serviceId);
   if (!svc) return { ok: false, error: "This version does not know that service." };
 
-  // Cookie access cannot be requested from here — permissions.request needs a user gesture, and a
-  // message from a page is not one. Saying so is better than failing with an empty export.
+  // Cookie access cannot be requested from here. permissions.request() may only be called from an
+  // extension surface inside a user-action handler, and a message relayed from a page is neither
+  // — a content script cannot call it at all. So the closest thing to doing it automatically is
+  // to put the surface in front of the operator: the popup already recognises this connect page
+  // and offers exactly the button that asks and then sends.
   if (!(await hasAccess(api, svc))) {
+    let opened = false;
+    try {
+      await api.action.openPopup();
+      opened = true;
+    } catch {
+      // Not permitted without a gesture of its own on some builds; the page explains instead.
+    }
     return {
       ok: false,
-      error: `Open the extension and allow access to ${svc.label} first.`,
       needsAccess: true,
+      service: svc.label,
+      domains: svc.domains,
+      opened,
+      error: opened
+        ? `Allow access to ${svc.label} in the extension window, and it will carry on.`
+        : `The extension needs access to ${svc.label}. Open it from your toolbar and press "Send to this instance".`,
     };
   }
 
