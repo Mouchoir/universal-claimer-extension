@@ -1,5 +1,6 @@
 import { SERVICES, serviceForUrl, toNetscape, dedupeCookies } from "./cookies.js";
 import { parsePairTarget } from "./pairing.js";
+import { readSession, sendSession } from "./session.js";
 
 // Cross-browser namespace: Firefox exposes `browser` (promises), Chrome exposes `chrome`
 // (promises in MV3). Both work with await.
@@ -59,27 +60,39 @@ function offerPairing(tabUrl) {
 
   document.getElementById("pair-send").addEventListener("click", async () => {
     try {
-      setStatus(`Reading your ${svc.label} cookies…`);
-      const { text, count, denied, hosts } = await collect(svc.id);
-      if (denied) {
-        setStatus(`Access to ${svc.label} sites was declined, so cookies can't be read.`, "err");
-        return;
+      // One request covering both the service's cookie domains and this instance, because there
+      // is only one user gesture to spend: Firefox invalidates permissions.request() once an
+      // await has intervened, so a second call after this one would silently never prompt.
+      //
+      // The instance origin is bundled in because granting it lets the extension put a bridge on
+      // the page, which turns every later connection into a single press on the site itself.
+      // Neither grant is required for this send to work, so the result is not checked here —
+      // whether cookies are actually readable is settled by what comes back below.
+      const relevant = activeHost
+        ? svc.domains.filter((d) => activeHost === d || activeHost.endsWith(`.${d}`))
+        : [];
+      const cookieOrigins = (relevant.length ? relevant : svc.domains).map((d) => `https://*.${d}/*`);
+      try {
+        await api.permissions.request({ origins: [...cookieOrigins, `${target.origin}/*`] });
+      } catch {
+        /* older engine, or declined; what follows reports the real consequence */
       }
+
+      setStatus(`Reading your ${svc.label} cookies…`);
+      const { text, count, hosts } = await readSession(api, svc.id);
       if (count === 0) {
-        setStatus(`No cookies found for ${svc.label}. Are you signed in on that site?`, "err");
+        setStatus(
+          `No cookies found for ${svc.label}. Are you signed in on that site, and did you allow access?`,
+          "err",
+        );
         return;
       }
 
-      // The instance answers CORS for this endpoint, so no host permission is needed for it
-      // either. The pairing token is what authorises the write, not the origin.
-      const res = await fetch(`${target.origin}/api/connect/session`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: target.token, cookiesText: text }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setStatus(data?.error?.message ?? `The instance rejected it (${res.status}).`, "err");
+      // The instance answers CORS for this endpoint, so the send works whether or not the origin
+      // grant above was accepted. The pairing token is what authorises the write, not the origin.
+      const error = await sendSession(target.origin, target.token, text);
+      if (error) {
+        setStatus(error, "err");
         return;
       }
       setStatus(`Sent ${count} cookies for ${svc.label} (${hosts.join(", ")}).`, "ok");
