@@ -116,6 +116,31 @@ its own entry for the extension to work outside the United States.
 No content script is injected into any of these hosts. The permission is used solely to read
 cookies through the cookies API.
 
+### scripting
+
+Added in 0.2.0, for the one-click connection.
+
+The extension registers a small bridge script on the user's own Universal Claimer instance — and
+only there, on an origin they granted by hand — so the page can ask for a session without them
+having to open this popup and copy anything. The bridge relays that request and posts the result
+back to the page it came from.
+
+Registration is rebuilt from the live permission set and undone when a permission is revoked, so
+no script remains on a site whose access was withdrawn.
+
+### Host permission — optional, `*://*/*`
+
+Also added in 0.2.0, and never granted at install: it is declared as *optional* precisely so
+nothing is held until the user grants a specific origin at runtime.
+
+Universal Claimer is self-hosted. Its address is whatever the user chose — a LAN IP, a hostname,
+a port — and cannot be known when this extension is built, so it cannot be listed as a fixed
+pattern in the manifest. The extension asks for exactly the one origin the user is on when they
+choose to connect it, and for nothing else.
+
+Only that granted origin can reach the bridge. The wildcard is the shape of the request the API
+requires to allow *any* origin to be asked for; it is never held as a grant.
+
 ### Remote code
 
 Select **No, I am not using remote code**. All JavaScript ships inside the package; nothing is

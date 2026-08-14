@@ -49,9 +49,10 @@ jobs:
       - name: Build package
         run: npm run build
 
-      # Skipped rather than failed when the Chrome credentials are absent. The two stores are
-      # approved independently — one can be live while the other is still in review, or never set
-      # up at all in a fork — and a missing Chrome secret should not block a Firefox release.
+      # The two stores are attempted independently. They are reviewed and approved separately,
+      # so one being unconfigured — or refusing the release, which Chrome does whenever new
+      # permissions need fresh privacy answers — must not stop the other from shipping. Each step
+      # runs on its own condition and the job still ends red if either failed.
       - name: Publish to Chrome Web Store
         if: env.HAS_CHROME == 'true'
         env:
@@ -64,13 +65,16 @@ jobs:
       # AMO reviews the source itself; the add-on is plain, unminified JS so no separate source
       # upload is needed.
       - name: Publish to Firefox Add-ons (AMO)
-        if: env.HAS_AMO == 'true'
+        if: always() && env.HAS_AMO == 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: npx web-ext sign --source-dir=src --channel=listed --artifacts-dir=dist-signed
 
+      # Runs even if a store refused: the artifact is what was built from this tag either way,
+      # and having it on the release is what makes a manual upload possible.
       - name: Attach the built package to the GitHub release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           files: |
