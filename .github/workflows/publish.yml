@@ -19,6 +19,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: store-release # gate releases behind an approval/secret scope
+    # Whether each store is configured, resolved here because the `secrets` context is not
+    # available to an `if` condition — using it there does not merely evaluate false, it makes
+    # the whole workflow invalid, and the run fails before a single job starts.
+    env:
+      HAS_CHROME: ${{ secrets.CHROME_EXTENSION_ID != '' }}
+      HAS_AMO: ${{ secrets.AMO_JWT_ISSUER != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,7 +53,7 @@ jobs:
       # approved independently — one can be live while the other is still in review, or never set
       # up at all in a fork — and a missing Chrome secret should not block a Firefox release.
       - name: Publish to Chrome Web Store
-        if: ${{ secrets.CHROME_EXTENSION_ID != '' }}
+        if: env.HAS_CHROME == 'true'
         env:
           EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
@@ -58,7 +64,7 @@ jobs:
       # AMO reviews the source itself; the add-on is plain, unminified JS so no separate source
       # upload is needed.
       - name: Publish to Firefox Add-ons (AMO)
-        if: ${{ secrets.AMO_JWT_ISSUER != '' }}
+        if: env.HAS_AMO == 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
