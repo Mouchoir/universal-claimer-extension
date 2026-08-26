@@ -1,0 +1,20 @@
+# The publishing toolchain ages silently and is only exercised at release time — the worst moment
+# to discover that web-ext or the upload CLI has moved on. Weekly, grouped, so it stays readable.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: ["minor", "patch"]
