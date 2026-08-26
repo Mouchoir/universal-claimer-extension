@@ -12,7 +12,7 @@
     "check-version": "node scripts/check-version.mjs"
   },
   "devDependencies": {
-    "vitest": "^2.1.4",
+    "vitest": "^4.1.11",
     "web-ext": "^8.3.0",
     "chrome-webstore-upload-cli": "^3.3.0"
   }
