@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Universal Claimer — Session Exporter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Export your session cookies locally to connect an account in your self-hosted Universal Claimer. Nothing leaves your machine.",
   "permissions": [
     "cookies",
