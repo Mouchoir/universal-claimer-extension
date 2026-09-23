@@ -22,7 +22,7 @@
   </head>
   <body>
     <h1>🎁 Universal Claimer — Session Exporter</h1>
-    <p class="muted">Runs entirely on your machine. Your cookies are never sent anywhere.</p>
+    <p class="muted">Your cookies go only where you send them: your clipboard, a file, or your own Universal Claimer instance.</p>
 
     <!-- Shown only when the active tab is a connect page carrying a pairing token, which is the
          one-click path. Hidden the rest of the time so the popup stays what it was. -->
@@ -32,7 +32,9 @@
         <strong id="pair-host"></strong>?
       </p>
       <button id="pair-send" class="primary">Send to this instance</button>
-      <p class="muted">Nothing is stored or sent anywhere else.</p>
+      <p id="pair-allow-note" class="muted" hidden></p>
+      <button id="pair-allow" hidden>Allow access (one time)</button>
+      <p class="muted">Sent to this instance and nowhere else.</p>
       <hr />
       <p class="muted">Or export it by hand:</p>
     </div>

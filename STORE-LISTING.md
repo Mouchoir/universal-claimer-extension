@@ -76,22 +76,23 @@ Reading cookies is the extension's entire function: it exports the user's own se
 service they are already signed in to, so they can connect that account in their self-hosted
 Universal Claimer instance. Without this permission the extension has nothing to do.
 
-Cookies are read only when the user opens the popup and clicks Copy or Download, and they go only
-to that user's own clipboard or downloads folder. They are never transmitted anywhere: the
-extension contains no code that opens a network connection, so there is no endpoint for them to
-reach.
+Cookies are read only when the user asks: Copy, Download or Send in the popup, or the connect
+button on the page of an instance the user allowed. They go to the user's clipboard, their
+downloads folder, or their own instance's `/api/connect/session` — posted from inside that
+instance's own tab, with the one-time pairing code the page issued. There is no server of the
+author's and no third party for them to reach.
 
 Which cookies can be read is bounded by the explicit host_permissions list, so only the four
 supported services' domains are ever accessible.
 
 ### activeTab
 
-Used only to read the current tab's URL, so the popup can preselect the service the user is
-already signed in to instead of making them find it in a list.
+Reads the current tab's URL when the popup is opened, to preselect the service the user is signed
+in to and to recognise a Universal Claimer connect page. When the user presses Send on such a
+page, a small function runs in that tab to post the session to the instance same-origin (an
+extension page cannot reach a plain-http instance: it would be blocked as mixed content).
 
-Nothing else about the tab is used: no page content is read, no script is injected, and nothing
-is modified. The extension remains fully functional without it — the user simply picks the
-service from the dropdown manually.
+No page content is read and nothing is modified.
 
 ### clipboardWrite
 
@@ -127,8 +128,10 @@ only there, on an origin they granted by hand — so the page can ask for a sess
 having to open this popup and copy anything. The bridge relays that request and posts the result
 back to the page it came from.
 
-Registration is rebuilt from the live permission set and undone when a permission is revoked, so
-no script remains on a site whose access was withdrawn.
+When access is granted, the bridge is also put on that instance's tabs that are already open, so
+the page's button works without a reload. Registration is rebuilt from the live permission set
+and undone when a permission is revoked, and the worker refuses any request from an address whose
+permission is gone.
 
 ### storage
 
@@ -147,11 +150,22 @@ nothing is held until the user grants a specific origin at runtime.
 
 Universal Claimer is self-hosted. Its address is whatever the user chose — a LAN IP, a hostname,
 a port — and cannot be known when this extension is built, so it cannot be listed as a fixed
-pattern in the manifest. The extension asks for exactly the one origin the user is on when they
-choose to connect it, and for nothing else.
+pattern in the manifest. The user enters or confirms that address on the extension's own setup
+page, and the extension asks for that one origin and nothing else. On Chrome the grant is that
+exact origin; on Firefox it covers every port of the host, because Firefox match patterns cannot
+carry a port — and only the exact addresses on the user's allowed list can ever request a
+session.
 
-Only that granted origin can reach the bridge. The wildcard is the shape of the request the API
-requires to allow *any* origin to be asked for; it is never held as a grant.
+The wildcard is the shape of the request the API requires to allow *any* origin to be asked for.
+The extension never asks for it. (Firefox lets a user switch the whole of it on in about:addons;
+even then, only allowed addresses can request a session.)
+
+### tabs (no permission; `tabs.create`)
+
+The setup page opens in a tab: on install, once after an update that left an allowed instance
+without its permission, and from the popup when something is missing. Permissions are asked for
+there rather than from the popup, because Firefox on Windows can open a popup's permission prompt
+behind the popup, where it cannot be clicked.
 
 ### Remote code
 
@@ -161,8 +175,10 @@ fetched, imported from a remote URL, or evaluated at runtime, and there is no ev
 ### Data usage
 
 Tick **nothing**. Chrome defines collection as transmitting data off the user's device where the
-developer or a third party can access it, and this extension transmits nothing — the clipboard
-and the downloads folder are the user's own machine.
+developer or a third party can access it. The extension sends a session only to the user's own
+self-hosted instance, at the address they allowed — neither the developer nor any third party can
+access it — and otherwise hands it to the user's clipboard or downloads folder. (This is a
+judgement about the definition; re-read it against Chrome's current wording before submitting.)
 
 Declaring "authentication information" here would be the cautious-looking answer and the wrong
 one: it publishes a notice telling users their data is collected, which is untrue and contradicts

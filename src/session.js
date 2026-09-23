@@ -9,32 +9,6 @@ import { SERVICES, toNetscape, dedupeCookies } from "./cookies.js";
  * different things.
  */
 
-/**
- * Ensure cookie access for a service, asking for it if this is Firefox and it has not been
- * granted yet.
- *
- * Only callable from a user gesture — `permissions.request` requires one — which is why the
- * background worker never calls this and instead reports what is missing back to the popup.
- */
-export async function ensureAccess(api, svc, activeHost) {
-  // Ask for the domain you are actually on when it belongs to this service. A service like Amazon
-  // spans one domain per marketplace, and asking for all twenty-odd at once produces a wall of
-  // toggles that is easy to dismiss — which silently leaves the one that matters switched off.
-  const relevant = activeHost
-    ? svc.domains.filter((d) => activeHost === d || activeHost.endsWith(`.${d}`))
-    : [];
-  const origins = (relevant.length ? relevant : svc.domains).map((d) => `https://*.${d}/*`);
-  try {
-    // request() is called directly rather than after a contains() check: it resolves to true
-    // without prompting when the permission is already held, and Firefox requires request() to
-    // run inside the user gesture — an await beforehand can invalidate that.
-    return await api.permissions.request({ origins });
-  } catch {
-    // Older engines without the permissions API: assume the manifest grant applies.
-    return true;
-  }
-}
-
 /** Where the instances the operator allowed are remembered, by exact origin (port included). */
 export const INSTANCES_KEY = "allowedInstances";
 
@@ -75,14 +49,27 @@ export async function missingAccess(api, svc) {
   return missing;
 }
 
+/**
+ * Whether a service's session can be read, and what is still missing.
+ *
+ * Usable means every domain for most services, but any one of them for a service that spans
+ * marketplaces: an Amazon account lives on one storefront, so blocking it until all twenty-two
+ * are granted only stopped people for no reason.
+ */
+export async function accessState(api, svc) {
+  const missing = await missingAccess(api, svc);
+  const usable = svc.anyDomain ? missing.length < svc.domains.length : missing.length === 0;
+  return { usable, missing };
+}
+
 /** Whether cookie access for a service is already granted, without prompting. */
 export async function hasAccess(api, svc) {
-  return (await missingAccess(api, svc)).length === 0;
+  return (await accessState(api, svc)).usable;
 }
 
 /**
- * Read and serialize a service's cookies. Assumes access is already granted — callers that can
- * prompt should call {@link ensureAccess} first.
+ * Read and serialize a service's cookies. Assumes access is already granted; anything missing is
+ * granted on the setup page (see setup.js), never prompted for from here.
  */
 export async function readSession(api, serviceId) {
   const svc = SERVICES.find((s) => s.id === serviceId);

@@ -6,6 +6,7 @@ import {
   instancePattern,
   instancesFromGrants,
   isAllowedInstance,
+  normalizeInstance,
   parsePairTarget,
 } from "../src/pairing.js";
 
@@ -192,5 +193,25 @@ describe("instancesFromGrants", () => {
   it("copes with nothing granted", () => {
     expect(instancesFromGrants(undefined)).toEqual([]);
     expect(instancesFromGrants([])).toEqual([]);
+  });
+});
+
+describe("normalizeInstance", () => {
+  it("reduces what the operator pastes to an origin", () => {
+    expect(normalizeInstance("http://192.168.1.20:8095/dashboard?x=1")).toBe("http://192.168.1.20:8095");
+    expect(normalizeInstance("  https://claimer.example/  ")).toBe("https://claimer.example");
+  });
+
+  it("accepts a bare host:port, the usual way to write a LAN address", () => {
+    expect(normalizeInstance("192.168.1.20:8095")).toBe("http://192.168.1.20:8095");
+    expect(normalizeInstance("nas.local")).toBe("http://nas.local");
+  });
+
+  it("refuses what is not an http(s) address", () => {
+    expect(normalizeInstance("")).toBeNull();
+    expect(normalizeInstance(undefined)).toBeNull();
+    expect(normalizeInstance("file:///etc/passwd")).toBeNull();
+    expect(normalizeInstance("javascript://alert(1)")).toBeNull();
+    expect(normalizeInstance("http://")).toBeNull();
   });
 });
