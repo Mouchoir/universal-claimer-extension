@@ -12,8 +12,8 @@ Universal Claimer — Session Exporter
 
 ## Summary / short description (132 chars max on AMO, 132 on Chrome)
 
-Export your own session cookies locally to connect an account in your self-hosted Universal
-Claimer. Nothing is ever sent anywhere.
+Export your own session cookies to connect an account in your self-hosted Universal Claimer.
+Sent to your instance only.
 
 ## Full description
 
@@ -22,11 +22,12 @@ Some services refuse the browser it controls, so an account is connected by impo
 you exported yourself. This extension is how you export it.
 
 You click the extension while signed in to a supported service, and it hands the session cookies
-back to you — clipboard or file download. You paste them into your own instance.
+back to you — clipboard or file download — or, from your instance's connect page, sends them
+straight to that instance so there is nothing to paste.
 
-**It never makes a network request.** There is no server, no telemetry, and no third party. The
-extension contains no code that opens a network connection, so there is nowhere for your data to
-go: it reads cookies and gives them to you, and that is the whole program.
+**Your data goes to your instance and nowhere else.** There is no server of the author's, no
+telemetry, and no third party. A session is only ever sent to the Universal Claimer instance whose
+page you are on, when you start it there, with the one-time pairing code that page issued.
 
 Cookie access is limited to the services Universal Claimer supports — Twitch, Epic Games,
 Microsoft, and Amazon's regional storefronts. The browser enforces that list, not the extension's
@@ -65,8 +66,9 @@ This extension does exactly that one thing. While you are signed in to a support
 reads that service's cookies and hands them back to you — to your clipboard, or as a downloaded
 cookies.txt file. You then paste them into your own Universal Claimer instance.
 
-It has no other function. It makes no network requests, stores nothing between sessions, injects
-no content scripts, and modifies no page.
+It has no other function. It sends a session only to the user's own instance, on their action;
+the only thing it stores is the list of instance addresses the user allowed; its only content
+script runs on those instances, and it modifies no page.
 
 ### cookies
 
@@ -127,6 +129,16 @@ back to the page it came from.
 
 Registration is rebuilt from the live permission set and undone when a permission is revoked, so
 no script remains on a site whose access was withdrawn.
+
+### storage
+
+Added in 0.2.2.
+
+Remembers which Universal Claimer instances the user allowed, by exact address (for example
+`http://192.168.1.20:8095`), so the bridge script is put on those pages and only those. Firefox
+cannot express a port in a permission, so its grant covers every port of a host; this list is how
+the extension still refuses every address the user did not choose. Nothing else is stored, and
+nothing is synchronised off the device.
 
 ### Host permission — optional, `*://*/*`
 
