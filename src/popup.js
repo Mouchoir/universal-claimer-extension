@@ -1,6 +1,13 @@
 import { SERVICES, serviceForUrl, toNetscape, dedupeCookies } from "./cookies.js";
-import { parsePairTarget } from "./pairing.js";
-import { readSession, sendSession, sendSessionViaTab } from "./session.js";
+import { canBeInstance, instancePattern, parsePairTarget } from "./pairing.js";
+import {
+  INSTANCES_KEY,
+  cookieOrigins,
+  isFirefox,
+  readSession,
+  sendSession,
+  sendSessionViaTab,
+} from "./session.js";
 
 // Cross-browser namespace: Firefox exposes `browser` (promises), Chrome exposes `chrome`
 // (promises in MV3). Both work with await.
@@ -37,11 +44,24 @@ let activeTabId = null;
     const id = tab?.url ? serviceForUrl(tab.url) : null;
     if (id) $service.value = id;
     activeTabId = tab?.id ?? null;
-    offerPairing(tab?.url ?? "");
+    await offerPairing(tab?.url ?? "");
   } catch {
     /* ignore */
   }
 })();
+
+/** Remember an instance the operator allowed, so the background can put the bridge on it. */
+async function rememberInstance(origin) {
+  try {
+    const stored = await api.storage.local.get(INSTANCES_KEY);
+    const list = Array.isArray(stored?.[INSTANCES_KEY]) ? stored[INSTANCES_KEY] : [];
+    if (!list.includes(origin)) {
+      await api.storage.local.set({ [INSTANCES_KEY]: [...list, origin] });
+    }
+  } catch {
+    /* no storage; the popup route still works, only the page's one-click button does not */
+  }
+}
 
 /**
  * When the active tab is a connect page carrying a pairing token, offer to send the session
@@ -51,41 +71,81 @@ let activeTabId = null;
  * which is what makes this work against a self-hosted instance whose address cannot be known when
  * the extension is built.
  */
-function offerPairing(tabUrl) {
+async function offerPairing(tabUrl) {
   const target = parsePairTarget(tabUrl);
   if (!target) return;
   const svc = SERVICES.find((s) => s.id === target.serviceId);
   if (!svc) return; // A connect page for a service this version does not know about.
 
+  // The instance's pattern, in the form this browser can actually match. Firefox stores a pattern
+  // with a port and then never matches a page with it, so the ported grant earlier versions asked
+  // for never put the bridge on an instance at host:8095.
+  const pattern = instancePattern(target.origin, { firefox: isFirefox(api) });
+
+  // Worked out now, before any click. Firefox only lets permissions.request() prompt from inside
+  // the click handler with nothing awaited first, so there is no time to check then — and the
+  // handler has to know up front whether the send must wait for an answer at all. It must not wait
+  // on a prompt it does not need: on Windows that prompt can open behind this popup, where it
+  // cannot be clicked, and the send then sits there looking like nothing happened.
+  const wanted = canBeInstance(target.origin) ? [...cookieOrigins(svc), pattern] : cookieOrigins(svc);
+  const toRequest = [];
+  for (const origin of wanted) {
+    try {
+      if (!(await api.permissions.contains({ origins: [origin] }))) toRequest.push(origin);
+    } catch {
+      /* no permissions API: the manifest grant is all there is */
+    }
+  }
+
+  // What the send itself needs is only the cookie grants: the post runs inside this tab under
+  // activeTab. The instance grant is for next time — it lets the page's own button do everything —
+  // so the send never waits on it.
+  const cookieMissing = toRequest.filter((origin) => origin !== pattern);
+
   document.getElementById("pair-service").textContent = svc.label;
   document.getElementById("pair-host").textContent = new URL(target.origin).host;
   document.getElementById("pair").hidden = false;
 
-  document.getElementById("pair-send").addEventListener("click", async () => {
-    try {
-      // One request covering both the service's cookie domains and this instance, because there
-      // is only one user gesture to spend: Firefox invalidates permissions.request() once an
-      // await has intervened, so a second call after this one would silently never prompt.
-      //
-      // The instance origin is bundled in because granting it lets the extension put a bridge on
-      // the page, which turns every later connection into a single press on the site itself.
-      // Neither grant is required for this send to work, so the result is not checked here —
-      // whether cookies are actually readable is settled by what comes back below.
-      const relevant = activeHost
-        ? svc.domains.filter((d) => activeHost === d || activeHost.endsWith(`.${d}`))
-        : [];
-      const cookieOrigins = (relevant.length ? relevant : svc.domains).map((d) => `https://*.${d}/*`);
-      try {
-        await api.permissions.request({ origins: [...cookieOrigins, `${target.origin}/*`] });
-      } catch {
-        /* older engine, or declined; what follows reports the real consequence */
-      }
+  const $send = document.getElementById("pair-send");
+  $send.addEventListener("click", async () => {
+    // A second press would queue a second prompt and resend a token already spent.
+    if ($send.disabled) return;
+    $send.disabled = true;
 
-      // Put the bridge on this page now rather than waiting for the operator to reload it. The
-      // background registers it for granted origins, but that only takes effect on the next
-      // navigation — and the page they are looking at is the one they want it on.
+    // First call, with nothing awaited before it, so Firefox still counts it as this click's.
+    const granting = toRequest.length
+      ? api.permissions.request({ origins: toRequest }).catch(() => false)
+      : null;
+
+    // Pressing Send for this exact instance is the operator saying yes to it. Recorded now rather
+    // than once the prompt is answered: on Windows that prompt can open behind this popup, and
+    // closing the popup to reach it would otherwise lose the answer. Nothing is registered or sent
+    // through the entry until the instance's permission is actually held.
+    const remembering = canBeInstance(target.origin)
+      ? rememberInstance(target.origin)
+      : Promise.resolve();
+
+    let sent = false;
+    try {
+      if (cookieMissing.length) {
+        setStatus(
+          `Waiting for your permission to read ${svc.label} cookies… If you do not see the ` +
+            "prompt, click outside this window to reveal it, allow it, then open the extension " +
+            "again and press Send.",
+        );
+        // Whatever the answer, carry on: whether cookies are readable is settled below.
+        await granting;
+      }
+      await remembering;
+
+      // Put the bridge on this page now rather than waiting for the operator to reload it — but
+      // only where it is allowed to be, or the page would offer a button the worker then refuses.
       try {
-        if (activeTabId != null) {
+        if (
+          activeTabId != null &&
+          canBeInstance(target.origin) &&
+          (await api.permissions.contains({ origins: [pattern] }))
+        ) {
           await api.scripting.executeScript({ target: { tabId: activeTabId }, files: ["content.js"] });
         }
       } catch {
@@ -114,12 +174,18 @@ function offerPairing(tabUrl) {
         setStatus(error, "err");
         return;
       }
-      setStatus(`Sent ${count} cookies for ${svc.label} (${hosts.join(", ")}).`, "ok");
-      document.getElementById("pair-send").disabled = true;
+      sent = true;
+      const nextTime = toRequest.includes(pattern)
+        ? " Your browser is also asking to let the site's own button do this next time; allow it " +
+          "if you would like that (the prompt may be behind this window)."
+        : "";
+      setStatus(`Sent ${count} cookies for ${svc.label} (${hosts.join(", ")}).${nextTime}`, "ok");
     } catch (e) {
       // Usually the instance being unreachable from this machine — worth saying so rather than
       // showing a bare TypeError from fetch.
       setStatus(`Could not reach ${new URL(target.origin).host}: ${String(e)}`, "err");
+    } finally {
+      if (!sent) $send.disabled = false;
     }
   });
 }

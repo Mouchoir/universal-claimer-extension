@@ -1,6 +1,12 @@
 import { SERVICES } from "./cookies.js";
-import { parsePairTarget } from "./pairing.js";
-import { hasAccess, readSession, sendSession } from "./session.js";
+import {
+  bridgeMatches,
+  instancePattern,
+  instancesFromGrants,
+  isAllowedInstance,
+  parsePairTarget,
+} from "./pairing.js";
+import { INSTANCES_KEY, isFirefox, missingAccess, readSession } from "./session.js";
 
 /**
  * Serves the one-click path.
@@ -21,35 +27,70 @@ const api = globalThis.browser ?? globalThis.chrome;
 const SCRIPT_ID_PREFIX = "uc-bridge-";
 
 /**
- * Register the page bridge on every origin the operator has granted, and only those.
+ * The instances the operator allowed from the popup, by exact origin.
  *
- * Rebuilt from the current permission set rather than tracked incrementally: permissions can be
- * revoked from the browser's own UI without telling us, and a bridge left registered for a
- * revoked origin would be a script running somewhere consent was withdrawn.
+ * The first read after updating from a version that kept no such list seeds it from the
+ * permissions that version granted, so the update does not quietly take the page's one-click
+ * button away. Seeding when the key is absent, rather than on the install event, also covers an
+ * install event that was missed. An empty list is written on a fresh install, which marks it done.
+ */
+async function allowedInstances() {
+  try {
+    const stored = await api.storage.local.get(INSTANCES_KEY);
+    if (Array.isArray(stored?.[INSTANCES_KEY])) return stored[INSTANCES_KEY];
+    const { origins } = await api.permissions.getAll();
+    const seeded = instancesFromGrants(origins);
+    await api.storage.local.set({ [INSTANCES_KEY]: seeded });
+    return seeded;
+  } catch {
+    return [];
+  }
+}
+
+/** Whether the instance's own permission is still held — the operator can revoke it any time. */
+async function instanceGranted(origin) {
+  try {
+    return await api.permissions.contains({
+      origins: [instancePattern(origin, { firefox: isFirefox(api) })],
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Register the page bridge on the instances the operator allowed, and only those.
+ *
+ * Rebuilt from the current state rather than tracked incrementally: permissions can be revoked
+ * from the browser's own UI without telling us, and a bridge left registered for a revoked origin
+ * would be a script running somewhere consent was withdrawn. So an instance counts only while its
+ * permission is still held.
+ *
+ * This used to register on every granted origin, which includes the services' cookie domains —
+ * so the bridge also ran on twitch.tv and every Amazon storefront — and used the instance's origin
+ * with its port as the pattern, which Firefox silently never matches.
  */
 async function syncBridges() {
-  let granted;
-  try {
-    granted = await api.permissions.getAll();
-  } catch {
-    return;
+  const firefox = isFirefox(api);
+  const live = [];
+  for (const origin of await allowedInstances()) {
+    if (await instanceGranted(origin)) live.push(origin);
   }
-  // Only concrete http(s) origins. The manifest asks for `*://*/*` so any instance can be
-  // allowed, but that wildcard itself is never something to inject into.
-  const origins = (granted.origins ?? []).filter(
-    (o) => /^https?:\/\//.test(o) && !o.startsWith("*://*"),
-  );
+  const matches = bridgeMatches(live, { firefox });
 
   try {
     const existing = await api.scripting.getRegisteredContentScripts();
     const ours = existing.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX)).map((s) => s.id);
     if (ours.length) await api.scripting.unregisterContentScripts({ ids: ours });
-    if (!origins.length) return;
+    if (!matches.length) {
+      console.info("[universal-claimer] no allowed instance yet; page bridge not registered");
+      return;
+    }
 
     const script = {
       id: `${SCRIPT_ID_PREFIX}page`,
       js: ["content.js"],
-      matches: origins,
+      matches,
       runAt: "document_idle",
     };
     try {
@@ -60,7 +101,7 @@ async function syncBridges() {
       // and silently giving up here is what made the bridge never appear.
       await api.scripting.registerContentScripts([script]);
     }
-    console.info("[universal-claimer] page bridge registered for", origins);
+    console.info("[universal-claimer] page bridge registered for", live, "as", matches);
   } catch (e) {
     // Worth saying out loud: without this the site's one-click button silently stays a
     // three-step explanation, with nothing anywhere to say why.
@@ -68,11 +109,27 @@ async function syncBridges() {
   }
 }
 
-api.permissions.onAdded?.addListener(syncBridges);
-api.permissions.onRemoved?.addListener(syncBridges);
-api.runtime.onStartup?.addListener(syncBridges);
-api.runtime.onInstalled?.addListener(syncBridges);
-void syncBridges();
+/**
+ * Run the sync one at a time. Several triggers can land together — a grant, the list changing,
+ * the worker waking — and two overlapping runs can unregister each other's result.
+ */
+let syncing = Promise.resolve();
+function scheduleSync() {
+  // Whatever the listeners pass is ignored on purpose: each run reads the live state.
+  syncing = syncing.then(() => syncBridges(), () => syncBridges());
+  return syncing;
+}
+
+api.permissions.onAdded?.addListener(scheduleSync);
+api.permissions.onRemoved?.addListener(scheduleSync);
+api.storage?.onChanged?.addListener((changes, area) => {
+  // The popup records an instance on the press, and its permission may be granted before or after
+  // that — so the list changing is a trigger of its own.
+  if (area === "local" && changes[INSTANCES_KEY]) void scheduleSync();
+});
+api.runtime.onStartup?.addListener(scheduleSync);
+api.runtime.onInstalled?.addListener(scheduleSync);
+void scheduleSync();
 
 /**
  * Handle a connect request relayed from an allowed page.
@@ -90,6 +147,18 @@ async function handleConnect(message, sender) {
     return { ok: false, error: "The pairing on this page has changed. Reload and try again." };
   }
 
+  // By exact origin, port included. On Firefox the grant and the bridge are host-wide (it cannot
+  // express a port), so this is what keeps another service on the same machine from asking for a
+  // session through a page of its own.
+  if (!isAllowedInstance(tabUrl, await allowedInstances()) || !(await instanceGranted(target.origin))) {
+    return {
+      ok: false,
+      error:
+        "This instance has not been allowed in the extension yet. Click the extension's icon in " +
+        'the toolbar and press "Send to this instance" once; after that this button does it all.',
+    };
+  }
+
   const svc = SERVICES.find((s) => s.id === target.serviceId);
   if (!svc) return { ok: false, error: "This version does not know that service." };
 
@@ -98,7 +167,8 @@ async function handleConnect(message, sender) {
   // — a content script cannot call it at all. So the closest thing to doing it automatically is
   // to put the surface in front of the operator: the popup already recognises this connect page
   // and offers exactly the button that asks and then sends.
-  if (!(await hasAccess(api, svc))) {
+  const missing = await missingAccess(api, svc);
+  if (missing.length > 0) {
     let opened = false;
     try {
       await api.action.openPopup();
@@ -110,7 +180,8 @@ async function handleConnect(message, sender) {
       ok: false,
       needsAccess: true,
       service: svc.label,
-      domains: svc.domains,
+      // Only what is actually missing. Listing every marketplace buried the one that mattered.
+      domains: missing,
       opened,
       error: opened
         ? `Allow access to ${svc.label} in the extension window, and it will carry on.`

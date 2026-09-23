@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Universal Claimer — Session Exporter",
-  "version": "0.2.1",
-  "description": "Export your session cookies locally to connect an account in your self-hosted Universal Claimer. Nothing leaves your machine.",
+  "version": "0.2.2",
+  "description": "Export your session cookies to connect an account in your self-hosted Universal Claimer. Sent only to your own instance.",
   "permissions": [
     "cookies",
     "activeTab",
     "clipboardWrite",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "optional_host_permissions": [
     "*://*/*"

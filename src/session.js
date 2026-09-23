@@ -35,15 +35,49 @@ export async function ensureAccess(api, svc, activeHost) {
   }
 }
 
+/** Where the instances the operator allowed are remembered, by exact origin (port included). */
+export const INSTANCES_KEY = "allowedInstances";
+
+/**
+ * Whether this is Firefox. Decided from the extension's own URL scheme rather than from which
+ * namespace exists, since polyfills put a `browser` object into Chrome too.
+ */
+export function isFirefox(api) {
+  try {
+    return api.runtime.getURL("").startsWith("moz-extension:");
+  } catch {
+    return false;
+  }
+}
+
+/** The origin patterns a service's cookies need. */
+export function cookieOrigins(svc) {
+  return svc.domains.map((d) => `https://*.${d}/*`);
+}
+
+/**
+ * Which of a service's cookie domains are not granted yet. Empty when everything is in place.
+ *
+ * Per domain rather than all at once, so what gets reported — and asked for — is what is actually
+ * missing, not every marketplace Amazon has.
+ */
+export async function missingAccess(api, svc) {
+  const missing = [];
+  for (const domain of svc.domains) {
+    try {
+      if (!(await api.permissions.contains({ origins: [`https://*.${domain}/*`] }))) {
+        missing.push(domain);
+      }
+    } catch {
+      // No permissions API: the manifest grant is all there is, and it applies.
+    }
+  }
+  return missing;
+}
+
 /** Whether cookie access for a service is already granted, without prompting. */
 export async function hasAccess(api, svc) {
-  try {
-    return await api.permissions.contains({
-      origins: svc.domains.map((d) => `https://*.${d}/*`),
-    });
-  } catch {
-    return true;
-  }
+  return (await missingAccess(api, svc)).length === 0;
 }
 
 /**
