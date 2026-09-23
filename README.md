@@ -8,11 +8,13 @@ Chrome and Firefox, Manifest V3.
 
 ## Privacy
 
-- **It never makes a network request.** Your cookies never leave your machine: the extension reads
-  them and hands them to *you* (clipboard or file download). There is no server, no telemetry, no
-  analytics.
+- **Your cookies go only where you send them.** The extension hands them to *you* (clipboard or
+  file download), or sends them to *your own* Universal Claimer instance when you connect from its
+  page — at an address you allowed, with a one-time pairing code. There is no server of ours, no
+  telemetry, no analytics.
 - **Scoped access.** The `cookies` permission is limited to the supported service domains
-  (`twitch.tv`, `epicgames.com`, `microsoft.com`, `live.com`, `bing.com`) — see
+  (`twitch.tv`, `epicgames.com`, `microsoft.com`, `live.com`, `bing.com`, and Amazon's regional
+  storefronts) — see
   [`src/manifest.json`](src/manifest.json).
 - **Plain, unobfuscated source.** Nothing is minified or bundled; what you read here is what runs.
 
@@ -37,9 +39,14 @@ Chrome grants the manifest's host permissions when the extension is installed. *
 not**: under Manifest V3 they are opt-in, and hosts added by an update stay ungranted — which
 looks exactly like being signed out, because the extension simply sees no cookies.
 
-So the popup asks for the selected service's sites the first time you export from it. Accept the
-prompt and the export proceeds; decline and it says so plainly rather than blaming your login.
-You can review or revoke this at any time in `about:addons` → the extension → **Permissions**.
+So the extension opens its **setup page** on install and asks there: once for the services' sites,
+and once for your instance's address, which is what lets the connect button on your instance do
+everything by itself. The popup sends you back to that page whenever something is missing. It is
+a tab rather than the popup because Firefox on Windows can open a popup's permission prompt behind
+the popup, where it cannot be clicked.
+
+You can review or revoke all of this at any time in `about:addons` → the extension →
+**Permissions**, or remove an instance from the setup page.
 
 ## Install
 

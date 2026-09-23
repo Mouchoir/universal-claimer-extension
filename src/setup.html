@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Universal Claimer — Set up</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; }
+      h1 { font-size: 20px; margin: 0 0 6px; }
+      h2 { font-size: 16px; margin: 0 0 4px; }
+      section { border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 12px; padding: 16px; margin-top: 16px; }
+      input { width: 100%; padding: 8px; border-radius: 8px; box-sizing: border-box; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; }
+      button { margin-top: 10px; padding: 8px 14px; border-radius: 8px; cursor: pointer; border: 1px solid #7c5cff; background: #7c5cff; color: #fff; font: inherit; font-weight: 600; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button.quiet { background: transparent; color: inherit; border-color: currentColor; padding: 2px 8px; margin: 0 0 0 8px; font-weight: 400; }
+      .muted { opacity: 0.75; font-size: 13px; }
+      .state { margin-top: 8px; font-size: 14px; min-height: 20px; }
+      .ok { color: #22c55e; }
+      .err { color: #ef4444; }
+      ul { padding-left: 20px; margin: 8px 0 0; }
+    </style>
+  </head>
+  <body>
+    <h1>🎁 Universal Claimer — Set up</h1>
+    <p class="muted">
+      Two permissions, asked for here rather than from the toolbar popup: Firefox can open a
+      popup's permission prompt behind the popup itself, where it cannot be clicked.
+    </p>
+
+    <section>
+      <h2 id="cookies-title">1. Read your service sessions</h2>
+      <p class="muted">
+        Cookies for Twitch, Epic Games, Microsoft and Amazon's storefronts only — the browser
+        enforces that list. They are only ever read when you ask for them.
+      </p>
+      <button id="cookies-grant" hidden>Allow access to these services</button>
+      <div id="cookies-state" class="state"></div>
+    </section>
+
+    <section>
+      <h2>2. Your Universal Claimer instance</h2>
+      <p class="muted">
+        Lets the connect button on your instance's own page do everything, with no trip to this
+        extension. Sessions are only ever sent to an address you allow here.
+      </p>
+      <label for="instance" class="muted">Address, as you open it in the browser</label>
+      <input id="instance" placeholder="http://192.168.1.20:8095" autocomplete="off" spellcheck="false" />
+      <button id="instance-grant">Allow this instance</button>
+      <div id="instance-state" class="state"></div>
+      <div id="instances"></div>
+    </section>
+
+    <script type="module" src="setup.js"></script>
+  </body>
+</html>

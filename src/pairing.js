@@ -127,3 +127,22 @@ export function instancesFromGrants(origins) {
   }
   return found;
 }
+
+/**
+ * An instance address as the operator typed it, reduced to its origin — or null when it is not a
+ * usable http(s) address. Accepts a bare host:port, since that is how a LAN address is usually
+ * written, and anything pasted from the address bar, path and all.
+ */
+export function normalizeInstance(input) {
+  const text = String(input ?? "").trim();
+  if (!text) return null;
+  let url;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!url.hostname) return null;
+  return url.origin;
+}

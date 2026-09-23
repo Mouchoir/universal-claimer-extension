@@ -6,7 +6,7 @@ import {
   isAllowedInstance,
   parsePairTarget,
 } from "./pairing.js";
-import { INSTANCES_KEY, isFirefox, missingAccess, readSession } from "./session.js";
+import { INSTANCES_KEY, accessState, isFirefox, readSession } from "./session.js";
 
 /**
  * Serves the one-click path.
@@ -70,7 +70,7 @@ async function instanceGranted(origin) {
  * so the bridge also ran on twitch.tv and every Amazon storefront — and used the instance's origin
  * with its port as the pattern, which Firefox silently never matches.
  */
-async function syncBridges() {
+async function syncBridges({ inject = false } = {}) {
   const firefox = isFirefox(api);
   const live = [];
   for (const origin of await allowedInstances()) {
@@ -102,6 +102,7 @@ async function syncBridges() {
       await api.scripting.registerContentScripts([script]);
     }
     console.info("[universal-claimer] page bridge registered for", live, "as", matches);
+    if (inject) await injectIntoOpenTabs(live);
   } catch (e) {
     // Worth saying out loud: without this the site's one-click button silently stays a
     // three-step explanation, with nothing anywhere to say why.
@@ -110,25 +111,104 @@ async function syncBridges() {
 }
 
 /**
+ * Put the bridge on instance pages that are already open. A registration only applies from the
+ * next navigation, and the page the operator just allowed is normally the one they are looking
+ * at — this is what turns its button into the one-click one without a reload.
+ */
+async function injectIntoOpenTabs(live) {
+  let tabs;
+  try {
+    tabs = await api.tabs.query({});
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    let origin;
+    try {
+      // Readable only for hosts the extension holds a permission for, which is exactly these.
+      origin = new URL(tab.url ?? "").origin;
+    } catch {
+      continue;
+    }
+    if (tab.id == null || !live.includes(origin)) continue;
+    try {
+      // content.js stops by itself if a live copy is already on the page.
+      await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    } catch {
+      /* a page the browser does not let extensions touch; it gets the bridge on next load */
+    }
+  }
+}
+
+/**
  * Run the sync one at a time. Several triggers can land together — a grant, the list changing,
  * the worker waking — and two overlapping runs can unregister each other's result.
  */
 let syncing = Promise.resolve();
-function scheduleSync() {
-  // Whatever the listeners pass is ignored on purpose: each run reads the live state.
-  syncing = syncing.then(() => syncBridges(), () => syncBridges());
+function scheduleSync(opts) {
+  syncing = syncing.then(
+    () => syncBridges(opts),
+    () => syncBridges(opts),
+  );
   return syncing;
 }
 
-api.permissions.onAdded?.addListener(scheduleSync);
-api.permissions.onRemoved?.addListener(scheduleSync);
+/** Open the setup page, optionally with an instance address already filled in. */
+async function openSetup(instance) {
+  const query = instance ? `?instance=${encodeURIComponent(instance)}` : "";
+  try {
+    await api.tabs.create({ url: api.runtime.getURL(`setup.html${query}`) });
+  } catch {
+    /* no tabs API; the popup still links to it */
+  }
+}
+
+/** Remembers the version the update prompt was last shown for, so it is shown once at most. */
+const PROMPTED_KEY = "setupPromptedFor";
+
+/**
+ * After an update, the one thing worth interrupting for: an instance that worked and no longer
+ * does — an earlier version granted it in a form Firefox cannot match. Cookie domains the operator
+ * left off are their choice, and the popup routes to setup when one is actually needed; reopening
+ * a tab about them on every update would be nagging.
+ */
+async function promptAfterUpdate() {
+  const version = api.runtime.getManifest().version;
+  try {
+    const stored = await api.storage.local.get(PROMPTED_KEY);
+    if (stored?.[PROMPTED_KEY] === version) return;
+  } catch {
+    return;
+  }
+  for (const origin of await allowedInstances()) {
+    if (!(await instanceGranted(origin))) {
+      await api.storage.local.set({ [PROMPTED_KEY]: version }).catch(() => undefined);
+      await openSetup(origin);
+      return;
+    }
+  }
+}
+
+// Listener arguments are ignored on purpose: each run reads the live state.
+api.permissions.onAdded?.addListener(() => void scheduleSync({ inject: true }));
+api.permissions.onRemoved?.addListener(() => void scheduleSync());
 api.storage?.onChanged?.addListener((changes, area) => {
-  // The popup records an instance on the press, and its permission may be granted before or after
-  // that — so the list changing is a trigger of its own.
-  if (area === "local" && changes[INSTANCES_KEY]) void scheduleSync();
+  // The setup page records an instance once its permission is granted, which may be after
+  // permissions.onAdded has fired — so the list changing is a trigger of its own.
+  if (area === "local" && changes[INSTANCES_KEY]) void scheduleSync({ inject: true });
 });
-api.runtime.onStartup?.addListener(scheduleSync);
-api.runtime.onInstalled?.addListener(scheduleSync);
+api.runtime.onStartup?.addListener(() => void scheduleSync());
+api.runtime.onInstalled?.addListener(async (details) => {
+  await scheduleSync();
+  // Ask for what is needed straight away, in a tab, rather than leaving the operator to discover
+  // on their first click that nothing is allowed — which on Firefox, a temporary install
+  // included, is the state it starts in.
+  if (details?.reason === "install") {
+    await openSetup();
+  } else if (details?.reason === "update") {
+    await promptAfterUpdate();
+  }
+});
 void scheduleSync();
 
 /**
@@ -155,7 +235,7 @@ async function handleConnect(message, sender) {
       ok: false,
       error:
         "This instance has not been allowed in the extension yet. Click the extension's icon in " +
-        'the toolbar and press "Send to this instance" once; after that this button does it all.',
+        'the toolbar and press "Allow access (one time)"; after that this button does it all.',
     };
   }
 
@@ -167,8 +247,8 @@ async function handleConnect(message, sender) {
   // — a content script cannot call it at all. So the closest thing to doing it automatically is
   // to put the surface in front of the operator: the popup already recognises this connect page
   // and offers exactly the button that asks and then sends.
-  const missing = await missingAccess(api, svc);
-  if (missing.length > 0) {
+  const { usable, missing } = await accessState(api, svc);
+  if (!usable) {
     let opened = false;
     try {
       await api.action.openPopup();
@@ -184,8 +264,10 @@ async function handleConnect(message, sender) {
       domains: missing,
       opened,
       error: opened
-        ? `Allow access to ${svc.label} in the extension window, and it will carry on.`
-        : `The extension needs access to ${svc.label}. Open it from your toolbar and press "Send to this instance".`,
+        ? `Press "Allow access (one time)" in the extension window, allow ${svc.label} in the ` +
+          "tab that opens, then press this button again."
+        : `The extension needs access to ${svc.label}. Click its icon in the toolbar, press ` +
+          '"Allow access (one time)", allow it in the tab that opens, then press this button again.',
     };
   }
 

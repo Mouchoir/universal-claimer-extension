@@ -10,6 +10,9 @@ export const SERVICES = [
   {
     id: "primegaming",
     label: "Amazon Prime Gaming",
+    // One marketplace is enough: an account lives on one, and the others add nothing to its
+    // session. Holding every one is not required to read it.
+    anyDomain: true,
     // Every marketplace, not just the .com ones. Amazon sessions are per-marketplace and
     // Prime Gaming serves whichever matches the account's region, so exporting only .com
     // hands the instance a session that is signed out on luna.amazon.fr — which is exactly
