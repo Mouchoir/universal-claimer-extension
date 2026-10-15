@@ -26,7 +26,7 @@ jobs:
       HAS_CHROME: ${{ secrets.CHROME_EXTENSION_ID != '' }}
       HAS_AMO: ${{ secrets.AMO_JWT_ISSUER != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
