@@ -75,7 +75,7 @@ jobs:
       # and having it on the release is what makes a manual upload possible.
       - name: Attach the built package to the GitHub release
         if: always()
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.zip
